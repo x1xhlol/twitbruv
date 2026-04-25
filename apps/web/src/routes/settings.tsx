@@ -50,7 +50,9 @@ function Settings() {
       websiteUrl,
     })
     if (!parsed.success) {
-      setStatus(parsed.error.issues[0]?.message ?? "invalid")
+      const issue = parsed.error.issues[0]
+      const field = issue?.path?.[0]
+      setStatus(field ? `${String(field)}: ${issue.message}` : issue?.message ?? "invalid")
       return
     }
     try {
