@@ -17,7 +17,13 @@ import type { BlockedUser, MutedUser } from "../lib/api"
 
 export const Route = createFileRoute("/settings")({ component: Settings })
 
-type SettingsTab = "profile" | "account" | "sessions" | "privacy" | "danger"
+type SettingsTab =
+  | "profile"
+  | "account"
+  | "sessions"
+  | "privacy"
+  | "data"
+  | "danger"
 
 function Settings() {
   const router = useRouter()
@@ -79,6 +85,11 @@ function Settings() {
             label="Privacy"
           />
           <SettingsTabBtn
+            active={tab === "data"}
+            onClick={() => setTab("data")}
+            label="Your data"
+          />
+          <SettingsTabBtn
             active={tab === "danger"}
             onClick={() => setTab("danger")}
             label="Danger zone"
@@ -92,6 +103,7 @@ function Settings() {
             <SessionsSection currentSessionId={session?.session.id ?? null} />
           )}
           {tab === "privacy" && <PrivacySection />}
+          {tab === "data" && <ExportSection />}
           {tab === "danger" && (
             <DangerZone onDeleted={() => router.navigate({ to: "/" })} />
           )}
@@ -689,6 +701,55 @@ function PrivacyList<
         </li>
       ))}
     </ul>
+  )
+}
+
+function ExportSection() {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function download() {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const apiBase =
+        (typeof import.meta !== "undefined" && (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_PUBLIC_API_URL) ||
+        ""
+      const res = await fetch(`${apiBase}/api/me/export`, {
+        credentials: "include",
+      })
+      if (!res.ok) throw new Error(`export_failed_${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      // Filename comes from Content-Disposition; fall back to a generic name.
+      const cd = res.headers.get("content-disposition") || ""
+      const m = /filename="([^"]+)"/.exec(cd)
+      a.download = m?.[1] ?? "twotter-export.zip"
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "couldn't export")
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="space-y-2 border-t border-border pt-6">
+      <h2 className="text-sm font-semibold">Your data</h2>
+      <p className="text-xs text-muted-foreground">
+        Download a ZIP of everything twotter has on file for your account —
+        posts, follows, bookmarks, lists, notifications, and DM messages you
+        sent. The archive is generated on demand.
+      </p>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      <Button size="sm" variant="outline" onClick={download} disabled={busy}>
+        {busy ? "Preparing…" : "Download my data"}
+      </Button>
+    </section>
   )
 }
 
