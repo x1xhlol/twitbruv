@@ -54,6 +54,14 @@ const envSchema = z.object({
   // the URL is dead before most leak vectors find it.
   MEDIA_SIGNED_URL_TTL_SEC: z.coerce.number().int().min(60).max(3600).default(900),
 
+  // VAPID keys for Web Push (RFC 8292). Generate with `bunx web-push generate-vapid-keys`
+  // or `openssl ecparam -genkey -name prime256v1`. The endpoint is enabled only when both
+  // PUBLIC and PRIVATE keys are present; otherwise the subscribe endpoint replies 503 and
+  // notify(...) silently skips push delivery (notifications still write to DB / email).
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default('mailto:noreply@localhost'),
+
   // Add HSTS header in production. Off by default for dev (where requests come over http://localhost).
   // Enabling in prod opts the browser into HTTPS-only for this origin for 1 year, blocking
   // downgrade attacks. Only set this once you are sure HTTPS is permanent for the domain.

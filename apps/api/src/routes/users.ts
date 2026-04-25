@@ -10,7 +10,7 @@ import { loadPostMedia } from '../lib/post-media.ts'
 import { loadArticleCards } from '../lib/article-cards.ts'
 import { loadRepostTargets } from '../lib/repost-targets.ts'
 import { loadQuoteTargets } from '../lib/quote-targets.ts'
-import { notify, invalidateUnreadCounts } from '../lib/notify.ts'
+import { notify, invalidateUnreadCounts, dispatchPushNotifications } from '../lib/notify.ts'
 import { loadPolls } from '../lib/polls.ts'
 import { parseCursor } from '../lib/cursor.ts'
 import { homeFeedCacheKey, profileFeedCacheKey } from './feed.ts'
@@ -410,6 +410,12 @@ usersRoute.post('/:handle/follow', requireAuth(), async (c) => {
     cache.del(homeFeedCacheKey(session.user.id)),
     invalidateUnreadCounts(cache, notified),
   ])
+  void dispatchPushNotifications({
+    db,
+    env: c.get('ctx').env,
+    userIds: notified,
+    payload: { title: 'twotter', body: 'You have a new follower', url: '/notifications', tag: `follow:${user.id}` },
+  })
   return c.json({ ok: true })
 })
 

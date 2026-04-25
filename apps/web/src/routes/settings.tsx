@@ -17,7 +17,13 @@ import type { BlockedUser, MutedUser } from "../lib/api"
 
 export const Route = createFileRoute("/settings")({ component: Settings })
 
-type SettingsTab = "profile" | "account" | "sessions" | "privacy" | "danger"
+type SettingsTab =
+  | "profile"
+  | "account"
+  | "sessions"
+  | "privacy"
+  | "notifications"
+  | "danger"
 
 function Settings() {
   const router = useRouter()
@@ -79,6 +85,11 @@ function Settings() {
             label="Privacy"
           />
           <SettingsTabBtn
+            active={tab === "notifications"}
+            onClick={() => setTab("notifications")}
+            label="Notifications"
+          />
+          <SettingsTabBtn
             active={tab === "danger"}
             onClick={() => setTab("danger")}
             label="Danger zone"
@@ -92,6 +103,7 @@ function Settings() {
             <SessionsSection currentSessionId={session?.session.id ?? null} />
           )}
           {tab === "privacy" && <PrivacySection />}
+          {tab === "notifications" && <NotificationsSection />}
           {tab === "danger" && (
             <DangerZone onDeleted={() => router.navigate({ to: "/" })} />
           )}
@@ -690,6 +702,151 @@ function PrivacyList<
       ))}
     </ul>
   )
+}
+
+function NotificationsSection() {
+  const [supported, setSupported] = useState<boolean | null>(null)
+  const [enabled, setEnabled] = useState(false)
+  const [permission, setPermission] = useState<NotificationPermission>("default")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const ok =
+      "serviceWorker" in navigator &&
+      "PushManager" in window &&
+      "Notification" in window
+    setSupported(ok)
+    if (!ok) return
+    setPermission(Notification.permission)
+    navigator.serviceWorker
+      .getRegistration()
+      .then((reg) => reg?.pushManager.getSubscription())
+      .then((sub) => setEnabled(Boolean(sub)))
+      .catch(() => {})
+  }, [])
+
+  async function enable() {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const apiBase =
+        (typeof import.meta !== "undefined" && (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_PUBLIC_API_URL) ||
+        ""
+      const keyRes = await fetch(`${apiBase}/api/me/push/key`, { credentials: "include" })
+      if (!keyRes.ok) throw new Error("push_disabled")
+      const { key } = (await keyRes.json()) as { key: string }
+      const perm = await Notification.requestPermission()
+      setPermission(perm)
+      if (perm !== "granted") {
+        setError("Permission denied. You can re-enable in your browser's site settings.")
+        return
+      }
+      const reg = await navigator.serviceWorker.ready
+      const applicationServerKey = urlBase64ToUint8Array(key)
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        // Cast to BufferSource — TS lib.dom narrows differently in different
+        // configs, but PushManager accepts either Uint8Array or ArrayBuffer.
+        applicationServerKey: applicationServerKey as unknown as BufferSource,
+      })
+      const json = sub.toJSON()
+      const res = await fetch(`${apiBase}/api/me/push/subscribe`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }),
+      })
+      if (!res.ok) throw new Error(`subscribe_${res.status}`)
+      setEnabled(true)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "couldn't enable")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function disable() {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (sub) {
+        const apiBase =
+          (typeof import.meta !== "undefined" && (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_PUBLIC_API_URL) ||
+          ""
+        await fetch(`${apiBase}/api/me/push/unsubscribe`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        })
+        await sub.unsubscribe()
+      }
+      setEnabled(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "couldn't disable")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (supported === false) {
+    return (
+      <section className="space-y-2 border-t border-border pt-6">
+        <h2 className="text-sm font-semibold">Push notifications</h2>
+        <p className="text-xs text-muted-foreground">
+          Your browser doesn't support web push. Try Chrome, Edge, Firefox, or
+          (on iOS 16.4+) install twotter as a home-screen app.
+        </p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="space-y-2 border-t border-border pt-6">
+      <h2 className="text-sm font-semibold">Push notifications</h2>
+      <p className="text-xs text-muted-foreground">
+        Get a system notification on this device when you have new likes,
+        replies, mentions, follows, or DMs. You can turn this off any time.
+      </p>
+      {permission === "denied" && (
+        <p className="text-xs text-destructive">
+          Notifications are blocked at the browser level. Open this site's
+          settings in your browser to allow them.
+        </p>
+      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      {enabled ? (
+        <Button size="sm" variant="outline" onClick={disable} disabled={busy}>
+          {busy ? "Disabling…" : "Disable on this device"}
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          onClick={enable}
+          disabled={busy || permission === "denied"}
+        >
+          {busy ? "Enabling…" : "Enable on this device"}
+        </Button>
+      )}
+    </section>
+  )
+}
+
+// Decode the base64url-encoded VAPID public key into the Uint8Array shape
+// expected by PushManager.subscribe({ applicationServerKey }).
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
+  const rawData = window.atob(base64)
+  const out = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; i++) out[i] = rawData.charCodeAt(i)
+  return out
 }
 
 function DangerZone({ onDeleted }: { onDeleted: () => void }) {

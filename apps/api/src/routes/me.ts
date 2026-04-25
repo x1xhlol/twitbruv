@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
+import { z } from 'zod'
 import { and, desc, eq, isNull, lt } from '@workspace/db'
 import { schema } from '@workspace/db'
+import type { PushSubscription } from '../lib/push.ts'
 import { updateProfileSchema, claimHandleSchema } from '@workspace/validators'
 import { assetUrl, extractKey } from '@workspace/media/s3'
 import { requireAuth, type HonoEnv } from '../middleware/session.ts'
@@ -206,6 +208,71 @@ meRoute.get('/bookmarks', async (c) => {
   )
   const nextCursor = rows.length === limit ? rows[rows.length - 1]!.bookmarkedAt.toISOString() : null
   return c.json({ posts, nextCursor })
+})
+
+// Web Push subscriptions live in profile_private.push_subscriptions as a JSON
+// array (one entry per device/browser). The viewer can register multiple
+// devices; revoking one device only drops that endpoint from the array.
+const subscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({
+    p256dh: z.string().min(1),
+    auth: z.string().min(1),
+  }),
+})
+
+// Public VAPID key the browser needs to subscribe. Returns 404 when push
+// isn't configured on the server, so the UI can hide the toggle gracefully.
+meRoute.get('/push/key', async (c) => {
+  const { env } = c.get('ctx')
+  if (!env.VAPID_PUBLIC_KEY) return c.json({ error: 'push_disabled' }, 404)
+  return c.json({ key: env.VAPID_PUBLIC_KEY })
+})
+
+meRoute.post('/push/subscribe', async (c) => {
+  const session = c.get('session')!
+  const { db } = c.get('ctx')
+  const body = subscriptionSchema.parse(await c.req.json())
+  const [row] = await db
+    .select({ list: schema.profilePrivate.pushSubscriptions })
+    .from(schema.profilePrivate)
+    .where(eq(schema.profilePrivate.userId, session.user.id))
+    .limit(1)
+  const current = Array.isArray(row?.list)
+    ? ((row?.list as Array<PushSubscription>) ?? [])
+    : []
+  const filtered = current.filter((s) => s.endpoint !== body.endpoint)
+  filtered.push(body)
+  if (row) {
+    await db
+      .update(schema.profilePrivate)
+      .set({ pushSubscriptions: filtered })
+      .where(eq(schema.profilePrivate.userId, session.user.id))
+  } else {
+    await db
+      .insert(schema.profilePrivate)
+      .values({ userId: session.user.id, pushSubscriptions: filtered })
+  }
+  return c.json({ ok: true })
+})
+
+meRoute.post('/push/unsubscribe', async (c) => {
+  const session = c.get('session')!
+  const { db } = c.get('ctx')
+  const body = z.object({ endpoint: z.string().url() }).parse(await c.req.json())
+  const [row] = await db
+    .select({ list: schema.profilePrivate.pushSubscriptions })
+    .from(schema.profilePrivate)
+    .where(eq(schema.profilePrivate.userId, session.user.id))
+    .limit(1)
+  if (!row) return c.json({ ok: true })
+  const current = Array.isArray(row.list) ? (row.list as Array<PushSubscription>) : []
+  const next = current.filter((s) => s.endpoint !== body.endpoint)
+  await db
+    .update(schema.profilePrivate)
+    .set({ pushSubscriptions: next.length > 0 ? next : null })
+    .where(eq(schema.profilePrivate.userId, session.user.id))
+  return c.json({ ok: true })
 })
 
 function toSelfDto(

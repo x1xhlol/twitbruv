@@ -12,7 +12,7 @@ import { loadQuoteTargets } from '../lib/quote-targets.ts'
 import { loadPolls } from '../lib/polls.ts'
 import { linkHashtags } from '../lib/hashtags.ts'
 import { linkMentions } from '../lib/mentions.ts'
-import { notify, invalidateUnreadCounts } from '../lib/notify.ts'
+import { notify, invalidateUnreadCounts, dispatchPushNotifications } from '../lib/notify.ts'
 import { parseCursor } from '../lib/cursor.ts'
 import { homeFeedCacheKey, profileFeedCacheKey } from './feed.ts'
 
@@ -186,6 +186,19 @@ postsRoute.post('/', requireAuth(), async (c) => {
     cache.del(homeFeedCacheKey(session.user.id), profileFeedCacheKey(session.user.id)),
     invalidateUnreadCounts(cache, result.notified),
   ])
+  // Fire off web push to anyone who got a row, with a brief preview snippet.
+  // Best-effort; never blocks the response.
+  void dispatchPushNotifications({
+    db,
+    env: c.get('ctx').env,
+    userIds: result.notified,
+    payload: {
+      title: result.author.displayName || (result.author.handle ? `@${result.author.handle}` : 'New activity'),
+      body: result.post.text.slice(0, 140),
+      url: result.author.handle ? `/${result.author.handle}/p/${result.post.id}` : '/notifications',
+      tag: `post:${result.post.id}`,
+    },
+  })
 
   const env = c.get('ctx').mediaEnv
   const [mediaMap, articleMap, repostMap, quoteMap, pollMap] = await Promise.all([
@@ -278,6 +291,12 @@ postsRoute.post('/:id/repost', requireAuth(), async (c) => {
     cache.del(homeFeedCacheKey(session.user.id), profileFeedCacheKey(session.user.id)),
     invalidateUnreadCounts(cache, result.notified),
   ])
+  void dispatchPushNotifications({
+    db,
+    env: c.get('ctx').env,
+    userIds: result.notified,
+    payload: { title: 'twotter', body: 'Someone reposted your post', url: '/notifications', tag: `repost:${id}` },
+  })
   return c.json({ ok: true })
 })
 
@@ -347,6 +366,12 @@ postsRoute.post('/:id/like', requireAuth(), async (c) => {
   })
 
   await invalidateUnreadCounts(c.get('ctx').cache, notified)
+  void dispatchPushNotifications({
+    db,
+    env: c.get('ctx').env,
+    userIds: notified,
+    payload: { title: 'twotter', body: 'Someone liked your post', url: '/notifications', tag: `like:${id}` },
+  })
   return c.json({ ok: true })
 })
 
