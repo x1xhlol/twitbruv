@@ -22,12 +22,19 @@ export const userLists = pgTable(
     description: text('description'),
     isPrivate: boolean('is_private').notNull().default(false),
     memberCount: integer('member_count').notNull().default(0),
+    // Set when the owner pinned this list to their profile. Multiple lists can
+    // be pinned simultaneously; profile views render pinned lists first ordered
+    // by `pinnedAt` (most recent first), with the rest below.
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex('user_lists_owner_slug_uq').on(t.ownerId, t.slug),
     index('user_lists_owner_idx').on(t.ownerId, t.createdAt),
+    index('user_lists_owner_pinned_idx')
+      .on(t.ownerId)
+      .where(sql`${t.pinnedAt} IS NOT NULL`),
     check('user_lists_title_len', sql`char_length(${t.title}) BETWEEN 1 AND 60`),
     check('user_lists_slug_format', sql`${t.slug} ~ '^[a-z0-9-]{1,40}$'`),
   ],

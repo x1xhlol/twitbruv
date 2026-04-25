@@ -77,6 +77,8 @@ export const api = {
     request<{ ok: true }>(`/api/users/${h(handle)}/mute`, { method: "DELETE" }),
 
   feed: (cursor?: string) => request<FeedPage>(`/api/feed${qs(cursor)}`),
+  networkFeed: (cursor?: string) =>
+    request<NetworkFeedPage>(`/api/feed/network${qs(cursor)}`),
   publicTimeline: (cursor?: string) =>
     request<FeedPage>(`/api/posts${qs(cursor)}`),
   hashtag: (tag: string, cursor?: string) =>
@@ -92,6 +94,15 @@ export const api = {
     request<{ users: Array<PublicUser>; posts: Array<Post> }>(
       `/api/search?q=${encodeURIComponent(q)}`
     ),
+  savedSearches: () =>
+    request<{ items: Array<SavedSearch> }>("/api/search/saved"),
+  saveSearch: (query: string) =>
+    request<{ item: SavedSearch }>("/api/search/saved", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    }),
+  deleteSavedSearch: (id: string) =>
+    request<{ ok: true }>(`/api/search/saved/${id}`, { method: "DELETE" }),
   bookmarks: (cursor?: string) =>
     request<FeedPage>(`/api/me/bookmarks${qs(cursor)}`),
 
@@ -317,6 +328,8 @@ export const api = {
     quoteOfId?: string
     mediaIds?: Array<string>
     poll?: PollInput
+    /** Who can reply to this post. Defaults to anyone server-side. */
+    replyRestriction?: "anyone" | "following" | "mentioned"
   }) =>
     request<{ post: Post }>("/api/posts", {
       method: "POST",
@@ -393,6 +406,12 @@ export const api = {
     }),
   listTimeline: (id: string, cursor?: string) =>
     request<FeedPage>(`/api/lists/${id}/timeline${qs(cursor)}`),
+  pinList: (id: string) =>
+    request<{ ok: true }>(`/api/lists/${id}/pin`, { method: "POST" }),
+  unpinList: (id: string) =>
+    request<{ ok: true }>(`/api/lists/${id}/pin`, { method: "DELETE" }),
+  listsListedOn: (handle: string) =>
+    request<{ lists: Array<UserList> }>(`/api/lists/listed-on/${h(handle)}`),
   post: (id: string) => request<{ post: Post }>(`/api/posts/${id}`),
   thread: (id: string) => request<Thread>(`/api/posts/${id}/thread`),
   deletePost: (id: string) =>
@@ -402,6 +421,8 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ text }),
     }),
+  postEdits: (id: string) =>
+    request<{ edits: Array<PostEdit> }>(`/api/posts/${id}/edits`),
 
   like: (id: string) =>
     request<{ ok: true }>(`/api/posts/${id}/like`, { method: "POST" }),
@@ -415,6 +436,10 @@ export const api = {
     request<{ ok: true }>(`/api/posts/${id}/repost`, { method: "POST" }),
   unrepost: (id: string) =>
     request<{ ok: true }>(`/api/posts/${id}/repost`, { method: "DELETE" }),
+  hidePost: (id: string) =>
+    request<{ ok: true }>(`/api/posts/${id}/hide`, { method: "POST" }),
+  unhidePost: (id: string) =>
+    request<{ ok: true }>(`/api/posts/${id}/hide`, { method: "DELETE" }),
   pinPost: (id: string) =>
     request<{ ok: true }>(`/api/posts/${id}/pin`, { method: "POST" }),
   unpinPost: (id: string) =>
@@ -511,6 +536,12 @@ export type ReportReason =
   | "illegal"
   | "other"
 
+export interface PostEdit {
+  id: string
+  previousText: string
+  editedAt: string
+}
+
 export interface Post {
   id: string
   text: string
@@ -523,6 +554,9 @@ export interface Post {
   sensitive: boolean
   contentWarning: string | null
   replyRestriction: "anyone" | "following" | "mentioned"
+  /** Set when the conversation root author hid this reply. The thread renderer
+   *  collapses these by default behind a "Show hidden replies" affordance. */
+  hidden?: boolean
   author: {
     id: string
     handle: string | null
@@ -530,6 +564,7 @@ export interface Post {
     avatarUrl: string | null
     isVerified: boolean
     isBot: boolean
+    role: "user" | "admin" | "owner"
   }
   counts: {
     likes: number
@@ -616,6 +651,7 @@ export interface UserList {
   description: string | null
   isPrivate: boolean
   memberCount: number
+  pinnedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -626,6 +662,7 @@ export interface UserListMember {
   displayName: string | null
   avatarUrl: string | null
   isVerified: boolean
+  role: "user" | "admin" | "owner"
   addedAt: string
 }
 
@@ -650,6 +687,25 @@ export interface PostMedia {
   variants: Array<{ kind: string; url: string; width: number; height: number }>
 }
 
+export interface NetworkActor {
+  id: string
+  handle: string | null
+  displayName: string | null
+}
+
+export interface NetworkPost extends Post {
+  /** Up to 3 follows that liked or reposted this post. The full count is in
+   *  `networkActorTotal`. Surfaces the "Lucas + N others liked this" banner. */
+  networkActors: Array<NetworkActor>
+  networkActorTotal: number
+  networkActivityAt: string
+}
+
+export interface NetworkFeedPage {
+  posts: Array<NetworkPost>
+  nextCursor: string | null
+}
+
 export interface FeedPage {
   posts: Array<Post>
   nextCursor: string | null
@@ -668,6 +724,7 @@ export interface PublicUser {
   bannerUrl: string | null
   isVerified: boolean
   isBot: boolean
+  role: "user" | "admin" | "owner"
   createdAt: string
 }
 
@@ -697,7 +754,22 @@ export interface BlockedUser {
   displayName: string | null
   avatarUrl: string | null
   isVerified: boolean
+  role: "user" | "admin" | "owner"
   blockedAt: string
+}
+
+export interface ThreadReply extends Post {
+  /** Number of direct (non-deleted) replies to this reply. The thread route only ships
+   *  the first hop of replies; if this is non-zero, the UI shows a
+   *  "View N more replies" affordance that opens the reply's own thread page.
+   */
+  descendantReplyCount: number
+}
+
+export interface Thread {
+  ancestors: Array<Post>
+  post: Post | null
+  replies: Array<ThreadReply>
 }
 
 export interface MutedUser {
@@ -706,6 +778,7 @@ export interface MutedUser {
   displayName: string | null
   avatarUrl: string | null
   isVerified: boolean
+  role: "user" | "admin" | "owner"
   mutedAt: string
   scope: "feed" | "notifications" | "both"
 }
@@ -752,12 +825,16 @@ export interface CommunityMember {
   isVerified: boolean
   role: "owner" | "mod" | "member"
   joinedAt: string
+export interface SavedSearch {
+  id: string
+  query: string
+  createdAt?: string
 }
 
 export interface Thread {
   ancestors: Array<Post>
   post: Post | null
-  replies: Array<Post>
+  replies: Array<ThreadReply>
 }
 
 export interface NotificationItem {
@@ -780,6 +857,7 @@ export interface NotificationItem {
     displayName: string | null
     avatarUrl: string | null
     isVerified: boolean
+    role: "user" | "admin" | "owner"
   } | null
   /** Hydrated for kinds whose entity is a post (like / repost / reply / mention / quote /
    *  article_reply). Null when the post was deleted or the kind has no associated post. */
@@ -833,6 +911,7 @@ export interface ArticleDto {
     displayName: string | null
     avatarUrl: string | null
     isVerified: boolean
+    role: "user" | "admin" | "owner"
   }
 }
 
@@ -842,6 +921,7 @@ export interface DmMember {
   displayName: string | null
   avatarUrl: string | null
   isVerified: boolean
+  role: "user" | "admin" | "owner"
 }
 
 export type DmRequestState = "none" | "pending" | "accepted" | "declined"
@@ -872,7 +952,10 @@ export interface DmConversationDetail {
   myRole: "member" | "admin"
   myRequestState: DmRequestState
   members: Array<
-    DmMember & { role: "member" | "admin"; lastReadMessageId: string | null }
+    DmMember & {
+      chatRole: "member" | "admin"
+      lastReadMessageId: string | null
+    }
   >
 }
 
@@ -898,6 +981,7 @@ export interface InvitePreview {
       displayName: string | null
       avatarUrl: string | null
       isVerified: boolean
+      role: "user" | "admin" | "owner"
     }>
   }
   expiresAt: string | null
