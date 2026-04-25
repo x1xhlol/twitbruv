@@ -24,6 +24,7 @@ interface ListDto {
   description: string | null
   isPrivate: boolean
   memberCount: number
+  pinnedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -51,7 +52,13 @@ listsRoute.get('/by/:handle', async (c) => {
         isOwnerViewer ? undefined : eq(schema.userLists.isPrivate, false),
       ),
     )
-    .orderBy(desc(schema.userLists.createdAt))
+    // Pinned lists first (most-recently pinned at the top), then everything
+    // else by creation time.
+    .orderBy(
+      sql`(${schema.userLists.pinnedAt} IS NULL)`,
+      desc(schema.userLists.pinnedAt),
+      desc(schema.userLists.createdAt),
+    )
 
   return c.json({
     lists: rows.map((l) => toListDto(l, owner.handle, owner.displayName)),
@@ -71,7 +78,11 @@ listsRoute.get('/me', requireAuth(), async (c) => {
     .select()
     .from(schema.userLists)
     .where(eq(schema.userLists.ownerId, session.user.id))
-    .orderBy(desc(schema.userLists.createdAt))
+    .orderBy(
+      sql`(${schema.userLists.pinnedAt} IS NULL)`,
+      desc(schema.userLists.pinnedAt),
+      desc(schema.userLists.createdAt),
+    )
   return c.json({
     lists: rows.map((l) => toListDto(l, me?.handle ?? null, me?.displayName ?? null)),
   })
@@ -155,6 +166,75 @@ listsRoute.patch('/:id', requireAuth(), async (c) => {
     .where(eq(schema.users.id, session.user.id))
     .limit(1)
   return c.json({ list: toListDto(row, me?.handle ?? null, me?.displayName ?? null) })
+})
+
+// Pin / unpin a list to the owner's profile. The /by/:handle endpoint sorts
+// pinned lists to the top, so this single boolean controls profile ordering.
+listsRoute.post('/:id/pin', requireAuth(), async (c) => {
+  const session = c.get('session')!
+  const { db } = c.get('ctx')
+  const id = c.req.param('id')
+  const [row] = await db
+    .update(schema.userLists)
+    .set({ pinnedAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(eq(schema.userLists.id, id), eq(schema.userLists.ownerId, session.user.id)),
+    )
+    .returning({ id: schema.userLists.id })
+  if (!row) return c.json({ error: 'not_found' }, 404)
+  return c.json({ ok: true })
+})
+
+listsRoute.delete('/:id/pin', requireAuth(), async (c) => {
+  const session = c.get('session')!
+  const { db } = c.get('ctx')
+  const id = c.req.param('id')
+  const [row] = await db
+    .update(schema.userLists)
+    .set({ pinnedAt: null, updatedAt: new Date() })
+    .where(
+      and(eq(schema.userLists.id, id), eq(schema.userLists.ownerId, session.user.id)),
+    )
+    .returning({ id: schema.userLists.id })
+  if (!row) return c.json({ error: 'not_found' }, 404)
+  return c.json({ ok: true })
+})
+
+// "Lists I'm on" — public lists this user is a member of. Excludes private
+// lists owned by anyone other than the viewer.
+listsRoute.get('/listed-on/:handle', async (c) => {
+  const { db } = c.get('ctx')
+  const viewerId = c.get('session')?.user.id
+  const handle = c.req.param('handle').replace(/^@/, '')
+  const [user] = await db
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(and(eq(schema.users.handle, handle), isNull(schema.users.deletedAt)))
+    .limit(1)
+  if (!user) return c.json({ lists: [] })
+  const rows = await db
+    .select({
+      list: schema.userLists,
+      ownerHandle: schema.users.handle,
+      ownerDisplayName: schema.users.displayName,
+    })
+    .from(schema.userListMembers)
+    .innerJoin(schema.userLists, eq(schema.userLists.id, schema.userListMembers.listId))
+    .innerJoin(schema.users, eq(schema.users.id, schema.userLists.ownerId))
+    .where(
+      and(
+        eq(schema.userListMembers.memberId, user.id),
+        // Hide private lists unless the viewer owns them.
+        viewerId
+          ? sql`(${schema.userLists.isPrivate} = false OR ${schema.userLists.ownerId} = ${viewerId})`
+          : eq(schema.userLists.isPrivate, false),
+      ),
+    )
+    .orderBy(desc(schema.userListMembers.addedAt))
+    .limit(100)
+  return c.json({
+    lists: rows.map((r) => toListDto(r.list, r.ownerHandle, r.ownerDisplayName)),
+  })
 })
 
 listsRoute.delete('/:id', requireAuth(), async (c) => {
@@ -350,6 +430,7 @@ function toListDto(
     description: l.description,
     isPrivate: l.isPrivate,
     memberCount: l.memberCount,
+    pinnedAt: l.pinnedAt ? l.pinnedAt.toISOString() : null,
     createdAt: l.createdAt.toISOString(),
     updatedAt: l.updatedAt.toISOString(),
   }

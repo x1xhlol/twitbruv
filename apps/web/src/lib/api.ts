@@ -357,6 +357,12 @@ export const api = {
     }),
   listTimeline: (id: string, cursor?: string) =>
     request<FeedPage>(`/api/lists/${id}/timeline${qs(cursor)}`),
+  pinList: (id: string) =>
+    request<{ ok: true }>(`/api/lists/${id}/pin`, { method: "POST" }),
+  unpinList: (id: string) =>
+    request<{ ok: true }>(`/api/lists/${id}/pin`, { method: "DELETE" }),
+  listsListedOn: (handle: string) =>
+    request<{ lists: Array<UserList> }>(`/api/lists/listed-on/${h(handle)}`),
   post: (id: string) => request<{ post: Post }>(`/api/posts/${id}`),
   thread: (id: string) => request<Thread>(`/api/posts/${id}/thread`),
   deletePost: (id: string) =>
@@ -580,6 +586,7 @@ export interface UserList {
   description: string | null
   isPrivate: boolean
   memberCount: number
+  pinnedAt: string | null
   createdAt: string
   updatedAt: string
 }

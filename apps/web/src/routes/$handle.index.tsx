@@ -8,7 +8,7 @@ import { ImageLightbox } from "../components/image-lightbox"
 import { RichText } from "../components/rich-text"
 import { VerifiedBadge } from "../components/verified-badge"
 import { useMe } from "../lib/me"
-import type { PublicProfile } from "../lib/api"
+import type { PublicProfile, UserList } from "../lib/api"
 
 export const Route = createFileRoute("/$handle/")({ component: Profile })
 
@@ -159,6 +159,7 @@ function Profile() {
           </span>
         </div>
       </div>
+      {user.handle && <ProfileLists handle={user.handle} />}
       <div className="border-t border-border">
         <Feed
           queryKey={["userPosts", handle]}
@@ -167,5 +168,83 @@ function Profile() {
         />
       </div>
     </main>
+  )
+}
+
+function ProfileLists({ handle }: { handle: string }) {
+  const [pinned, setPinned] = useState<Array<UserList> | null>(null)
+  const [listedOn, setListedOn] = useState<Array<UserList> | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    api
+      .userLists(handle)
+      .then(({ lists }) => {
+        if (cancelled) return
+        setPinned(lists.filter((l) => l.pinnedAt))
+      })
+      .catch(() => {
+        if (!cancelled) setPinned([])
+      })
+    api
+      .listsListedOn(handle)
+      .then(({ lists }) => {
+        if (!cancelled) setListedOn(lists.slice(0, 10))
+      })
+      .catch(() => {
+        if (!cancelled) setListedOn([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [handle])
+
+  if ((pinned === null || pinned.length === 0) && (listedOn === null || listedOn.length === 0)) {
+    return null
+  }
+  return (
+    <div className="border-t border-border px-4 py-3 text-xs">
+      {pinned && pinned.length > 0 && (
+        <div className="mb-2">
+          <h2 className="mb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            Pinned lists
+          </h2>
+          <div className="flex flex-wrap gap-1.5">
+            {pinned.map((l) => (
+              <Link
+                key={l.id}
+                to="/lists/$id"
+                params={{ id: l.id }}
+                className="rounded-full border border-border bg-muted/40 px-2.5 py-1 hover:bg-muted"
+              >
+                {l.title}
+                <span className="ml-1.5 text-muted-foreground">{l.memberCount}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+      {listedOn && listedOn.length > 0 && (
+        <div>
+          <h2 className="mb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            Lists @{handle} is on
+          </h2>
+          <div className="flex flex-wrap gap-1.5">
+            {listedOn.map((l) => (
+              <Link
+                key={l.id}
+                to="/lists/$id"
+                params={{ id: l.id }}
+                className="rounded-full border border-border px-2.5 py-1 hover:bg-muted/40"
+              >
+                {l.title}
+                {l.ownerHandle && (
+                  <span className="ml-1.5 text-muted-foreground">@{l.ownerHandle}</span>
+                )}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
