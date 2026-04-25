@@ -825,6 +825,8 @@ export interface CommunityMember {
   isVerified: boolean
   role: "owner" | "mod" | "member"
   joinedAt: string
+}
+
 export interface SavedSearch {
   id: string
   query: string
