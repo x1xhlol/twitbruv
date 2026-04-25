@@ -92,6 +92,15 @@ export const api = {
     request<{ users: Array<PublicUser>; posts: Array<Post> }>(
       `/api/search?q=${encodeURIComponent(q)}`
     ),
+  savedSearches: () =>
+    request<{ items: Array<SavedSearch> }>("/api/search/saved"),
+  saveSearch: (query: string) =>
+    request<{ item: SavedSearch }>("/api/search/saved", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    }),
+  deleteSavedSearch: (id: string) =>
+    request<{ ok: true }>(`/api/search/saved/${id}`, { method: "DELETE" }),
   bookmarks: (cursor?: string) =>
     request<FeedPage>(`/api/me/bookmarks${qs(cursor)}`),
   blocks: (cursor?: string) =>
@@ -692,6 +701,12 @@ export interface SelfUser {
   locale: string
   timezone: string | null
   createdAt: string
+}
+
+export interface SavedSearch {
+  id: string
+  query: string
+  createdAt?: string
 }
 
 export interface Thread {
