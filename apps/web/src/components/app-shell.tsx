@@ -8,6 +8,7 @@ import {
   IconMail,
   IconPencil,
   IconSearch,
+  IconSparkles,
 } from "@tabler/icons-react"
 import {
   Sidebar,
@@ -85,6 +86,18 @@ export function AppShell({ children }: { children: ReactNode }) {
                         <Link to="/search">
                           <IconSearch />
                           <span>Search</span>
+                        </Link>
+                      }
+                    />
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      size="default"
+                      tooltip="explore"
+                      render={
+                        <Link to="/explore">
+                          <IconSparkles />
+                          <span>Explore</span>
                         </Link>
                       }
                     />

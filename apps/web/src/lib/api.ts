@@ -92,6 +92,21 @@ export const api = {
     request<{ users: Array<PublicUser>; posts: Array<Post> }>(
       `/api/search?q=${encodeURIComponent(q)}`
     ),
+  explore: () =>
+    request<{
+      hashtags: Array<{ tag: string; postCount: number }>
+      posts: Array<Post>
+      users: Array<{
+        id: string
+        handle: string | null
+        displayName: string | null
+        avatarUrl: string | null
+        isVerified: boolean
+        bio: string | null
+        followerCount: number
+      }>
+      cached: boolean
+    }>("/api/explore"),
   bookmarks: (cursor?: string) =>
     request<FeedPage>(`/api/me/bookmarks${qs(cursor)}`),
   blocks: (cursor?: string) =>
