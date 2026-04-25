@@ -94,6 +94,39 @@ export const api = {
     ),
   bookmarks: (cursor?: string) =>
     request<FeedPage>(`/api/me/bookmarks${qs(cursor)}`),
+  notificationPrefs: () =>
+    request<{
+      email: {
+        digest: "off" | "daily"
+        kinds: Array<
+          | "like"
+          | "repost"
+          | "reply"
+          | "mention"
+          | "follow"
+          | "dm"
+          | "article_reply"
+          | "quote"
+        >
+      }
+    }>("/api/me/notification-prefs"),
+  updateEmailPrefs: (body: {
+    digest: "off" | "daily"
+    kinds: Array<
+      | "like"
+      | "repost"
+      | "reply"
+      | "mention"
+      | "follow"
+      | "dm"
+      | "article_reply"
+      | "quote"
+    >
+  }) =>
+    request<{ ok: true }>("/api/me/notification-prefs/email", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   blocks: (cursor?: string) =>
     request<{ users: Array<BlockedUser>; nextCursor: string | null }>(
       `/api/me/blocks${qs(cursor)}`

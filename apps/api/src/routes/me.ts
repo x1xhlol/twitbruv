@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { z } from 'zod'
 import { and, desc, eq, isNull, lt } from '@workspace/db'
 import { schema } from '@workspace/db'
 import { updateProfileSchema, claimHandleSchema } from '@workspace/validators'
@@ -206,6 +207,70 @@ meRoute.get('/bookmarks', async (c) => {
   )
   const nextCursor = rows.length === limit ? rows[rows.length - 1]!.bookmarkedAt.toISOString() : null
   return c.json({ posts, nextCursor })
+})
+
+// Per-user notification preferences. Currently scoped to email digest
+// settings (off / daily) + which kinds to include. Web push opt-in is its
+// own subscription endpoint above.
+const emailPrefsSchema = z.object({
+  digest: z.enum(['off', 'daily']),
+  kinds: z
+    .array(
+      z.enum(['like', 'repost', 'reply', 'mention', 'follow', 'dm', 'article_reply', 'quote']),
+    )
+    .max(8),
+})
+
+meRoute.get('/notification-prefs', async (c) => {
+  const session = c.get('session')!
+  const { db } = c.get('ctx')
+  const [row] = await db
+    .select({ prefs: schema.profilePrivate.notificationPrefs })
+    .from(schema.profilePrivate)
+    .where(eq(schema.profilePrivate.userId, session.user.id))
+    .limit(1)
+  const raw = (row?.prefs as { email?: { digest?: string; kinds?: Array<string> } } | null) ?? null
+  return c.json({
+    email: {
+      digest: (raw?.email?.digest as 'off' | 'daily' | undefined) ?? 'off',
+      kinds: raw?.email?.kinds ?? [
+        'like',
+        'repost',
+        'reply',
+        'mention',
+        'follow',
+        'dm',
+        'article_reply',
+        'quote',
+      ],
+    },
+  })
+})
+
+meRoute.put('/notification-prefs/email', async (c) => {
+  const session = c.get('session')!
+  const { db } = c.get('ctx')
+  const body = emailPrefsSchema.parse(await c.req.json())
+
+  const [row] = await db
+    .select({ prefs: schema.profilePrivate.notificationPrefs })
+    .from(schema.profilePrivate)
+    .where(eq(schema.profilePrivate.userId, session.user.id))
+    .limit(1)
+  const current = (row?.prefs as Record<string, unknown> | null) ?? {}
+  const next = { ...current, email: { ...((current.email as object) ?? {}), digest: body.digest, kinds: body.kinds } }
+
+  if (row) {
+    await db
+      .update(schema.profilePrivate)
+      .set({ notificationPrefs: next })
+      .where(eq(schema.profilePrivate.userId, session.user.id))
+  } else {
+    await db
+      .insert(schema.profilePrivate)
+      .values({ userId: session.user.id, notificationPrefs: next })
+  }
+  return c.json({ ok: true })
 })
 
 function toSelfDto(

@@ -4,7 +4,7 @@ import { z } from 'zod'
 export const emailJobSchema = z.object({
   to: z.string().email(),
   subject: z.string().min(1),
-  template: z.enum(['verify', 'reset', 'magic-link', 'welcome']),
+  template: z.enum(['verify', 'reset', 'magic-link', 'welcome', 'digest']),
   data: z.record(z.string(), z.unknown()),
 })
 

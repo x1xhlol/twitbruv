@@ -17,7 +17,13 @@ import type { BlockedUser, MutedUser } from "../lib/api"
 
 export const Route = createFileRoute("/settings")({ component: Settings })
 
-type SettingsTab = "profile" | "account" | "sessions" | "privacy" | "danger"
+type SettingsTab =
+  | "profile"
+  | "account"
+  | "sessions"
+  | "privacy"
+  | "email"
+  | "danger"
 
 function Settings() {
   const router = useRouter()
@@ -79,6 +85,11 @@ function Settings() {
             label="Privacy"
           />
           <SettingsTabBtn
+            active={tab === "email"}
+            onClick={() => setTab("email")}
+            label="Email"
+          />
+          <SettingsTabBtn
             active={tab === "danger"}
             onClick={() => setTab("danger")}
             label="Danger zone"
@@ -92,6 +103,7 @@ function Settings() {
             <SessionsSection currentSessionId={session?.session.id ?? null} />
           )}
           {tab === "privacy" && <PrivacySection />}
+          {tab === "email" && <EmailNotificationsSection />}
           {tab === "danger" && (
             <DangerZone onDeleted={() => router.navigate({ to: "/" })} />
           )}
@@ -689,6 +701,123 @@ function PrivacyList<
         </li>
       ))}
     </ul>
+  )
+}
+
+const EMAIL_KINDS: Array<{ key: NotificationKind; label: string }> = [
+  { key: "reply", label: "Replies" },
+  { key: "mention", label: "Mentions" },
+  { key: "follow", label: "New followers" },
+  { key: "like", label: "Likes" },
+  { key: "repost", label: "Reposts" },
+  { key: "quote", label: "Quote posts" },
+  { key: "dm", label: "Direct messages" },
+  { key: "article_reply", label: "Article replies" },
+]
+
+type NotificationKind =
+  | "like"
+  | "repost"
+  | "reply"
+  | "mention"
+  | "follow"
+  | "dm"
+  | "article_reply"
+  | "quote"
+
+function EmailNotificationsSection() {
+  const [digest, setDigest] = useState<"off" | "daily">("off")
+  const [kinds, setKinds] = useState<Array<NotificationKind>>([
+    "reply",
+    "mention",
+    "follow",
+    "dm",
+  ])
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .notificationPrefs()
+      .then((p) => {
+        if (cancelled) return
+        setDigest(p.email.digest)
+        setKinds(p.email.kinds)
+      })
+      .catch(() => {
+        /* fall back to defaults; user can save to overwrite */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  function toggle(kind: NotificationKind) {
+    setKinds((prev) =>
+      prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind],
+    )
+  }
+
+  async function save() {
+    if (busy) return
+    setBusy(true)
+    setStatus(null)
+    try {
+      await api.updateEmailPrefs({ digest, kinds })
+      setStatus("Saved")
+    } catch (e) {
+      setStatus(e instanceof ApiError ? e.message : "couldn't save")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section
+      id="notifications"
+      className="space-y-3 border-t border-border pt-6"
+    >
+      <h2 className="text-sm font-semibold">Email notifications</h2>
+      <p className="text-xs text-muted-foreground">
+        Get a daily rollup email when you have unread notifications. Off by
+        default.
+      </p>
+      <div className="flex items-center gap-2 text-xs">
+        <Label htmlFor="digest-mode">Digest</Label>
+        <select
+          id="digest-mode"
+          value={digest}
+          onChange={(e) => setDigest(e.target.value as "off" | "daily")}
+          className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+        >
+          <option value="off">Off</option>
+          <option value="daily">Daily</option>
+        </select>
+      </div>
+      {digest === "daily" && (
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">Include:</p>
+          <div className="grid grid-cols-2 gap-1 text-xs">
+            {EMAIL_KINDS.map(({ key, label }) => (
+              <label key={key} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={kinds.includes(key)}
+                  onChange={() => toggle(key)}
+                  className="size-3.5 accent-primary"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+      {status && <p className="text-xs text-muted-foreground">{status}</p>}
+      <Button size="sm" variant="outline" onClick={save} disabled={busy}>
+        {busy ? "Saving…" : "Save preferences"}
+      </Button>
+    </section>
   )
 }
 
