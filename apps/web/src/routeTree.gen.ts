@@ -15,6 +15,7 @@ import { Route as SearchRouteImport } from './routes/search'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InboxRouteImport } from './routes/inbox'
+import { Route as ExploreRouteImport } from './routes/explore'
 import { Route as DraftsRouteImport } from './routes/drafts'
 import { Route as BookmarksRouteImport } from './routes/bookmarks'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
@@ -67,6 +68,11 @@ const LoginRoute = LoginRouteImport.update({
 const InboxRoute = InboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExploreRoute = ExploreRouteImport.update({
+  id: '/explore',
+  path: '/explore',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DraftsRoute = DraftsRouteImport.update({
@@ -192,6 +198,7 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AnalyticsRoute
   '/bookmarks': typeof BookmarksRoute
   '/drafts': typeof DraftsRoute
+  '/explore': typeof ExploreRoute
   '/inbox': typeof InboxRouteWithChildren
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
@@ -221,6 +228,7 @@ export interface FileRoutesByTo {
   '/analytics': typeof AnalyticsRoute
   '/bookmarks': typeof BookmarksRoute
   '/drafts': typeof DraftsRoute
+  '/explore': typeof ExploreRoute
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
   '/search': typeof SearchRoute
@@ -252,6 +260,7 @@ export interface FileRoutesById {
   '/analytics': typeof AnalyticsRoute
   '/bookmarks': typeof BookmarksRoute
   '/drafts': typeof DraftsRoute
+  '/explore': typeof ExploreRoute
   '/inbox': typeof InboxRouteWithChildren
   '/login': typeof LoginRoute
   '/notifications': typeof NotificationsRoute
@@ -285,6 +294,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/bookmarks'
     | '/drafts'
+    | '/explore'
     | '/inbox'
     | '/login'
     | '/notifications'
@@ -314,6 +324,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/bookmarks'
     | '/drafts'
+    | '/explore'
     | '/login'
     | '/notifications'
     | '/search'
@@ -344,6 +355,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/bookmarks'
     | '/drafts'
+    | '/explore'
     | '/inbox'
     | '/login'
     | '/notifications'
@@ -376,6 +388,7 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRoute
   BookmarksRoute: typeof BookmarksRoute
   DraftsRoute: typeof DraftsRoute
+  ExploreRoute: typeof ExploreRoute
   InboxRoute: typeof InboxRouteWithChildren
   LoginRoute: typeof LoginRoute
   NotificationsRoute: typeof NotificationsRoute
@@ -432,6 +445,13 @@ declare module '@tanstack/react-router' {
       path: '/inbox'
       fullPath: '/inbox'
       preLoaderRoute: typeof InboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/explore': {
+      id: '/explore'
+      path: '/explore'
+      fullPath: '/explore'
+      preLoaderRoute: typeof ExploreRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/drafts': {
@@ -652,6 +672,7 @@ const rootRouteChildren: RootRouteChildren = {
   AnalyticsRoute: AnalyticsRoute,
   BookmarksRoute: BookmarksRoute,
   DraftsRoute: DraftsRoute,
+  ExploreRoute: ExploreRoute,
   InboxRoute: InboxRouteWithChildren,
   LoginRoute: LoginRoute,
   NotificationsRoute: NotificationsRoute,
