@@ -51,8 +51,8 @@ function Settings() {
     })
     if (!parsed.success) {
       const issue = parsed.error.issues[0]
-      const field = issue?.path?.[0]
-      setStatus(field ? `${String(field)}: ${issue.message}` : issue?.message ?? "invalid")
+      const field = issue.path[0]
+      setStatus(field ? `${String(field)}: ${issue.message}` : issue.message)
       return
     }
     try {
