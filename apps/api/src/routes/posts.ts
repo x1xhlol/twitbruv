@@ -697,6 +697,37 @@ postsRoute.delete('/:id/pin', requireAuth(), async (c) => {
   return c.json({ ok: true })
 })
 
+// Read the prior versions of a post — newest first. We expose this to anyone
+// who can already see the post (i.e. it isn't deleted) so the "edited" badge
+// can link to a "View edit history" sheet, mirroring X's UX.
+postsRoute.get('/:id/edits', async (c) => {
+  const { db } = c.get('ctx')
+  const id = c.req.param('id')
+  const [post] = await db
+    .select({ id: schema.posts.id, deletedAt: schema.posts.deletedAt })
+    .from(schema.posts)
+    .where(eq(schema.posts.id, id))
+    .limit(1)
+  if (!post || post.deletedAt) return c.json({ error: 'not_found' }, 404)
+  const edits = await db
+    .select({
+      id: schema.postEdits.id,
+      previousText: schema.postEdits.previousText,
+      editedAt: schema.postEdits.editedAt,
+    })
+    .from(schema.postEdits)
+    .where(eq(schema.postEdits.postId, id))
+    .orderBy(desc(schema.postEdits.editedAt))
+    .limit(50)
+  return c.json({
+    edits: edits.map((e) => ({
+      id: e.id,
+      previousText: e.previousText,
+      editedAt: e.editedAt.toISOString(),
+    })),
+  })
+})
+
 postsRoute.delete('/:id', requireAuth(), async (c) => {
   const session = c.get('session')!
   const { db, cache } = c.get('ctx')

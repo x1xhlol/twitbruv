@@ -366,6 +366,8 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ text }),
     }),
+  postEdits: (id: string) =>
+    request<{ edits: Array<PostEdit> }>(`/api/posts/${id}/edits`),
 
   like: (id: string) =>
     request<{ ok: true }>(`/api/posts/${id}/like`, { method: "POST" }),
@@ -474,6 +476,12 @@ export type ReportReason =
   | "impersonation"
   | "illegal"
   | "other"
+
+export interface PostEdit {
+  id: string
+  previousText: string
+  editedAt: string
+}
 
 export interface Post {
   id: string
