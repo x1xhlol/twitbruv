@@ -43,6 +43,10 @@ export const posts = pgTable(
     replyRestriction: replyRestrictionEnum('reply_restriction').notNull().default('anyone'),
     editedAt: timestamp('edited_at', { withTimezone: true }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    // Set when the author of the conversation root hides this reply. The reply is still
+    // visible in the original author's own profile and to anyone with the direct link;
+    // it's only collapsed/hidden from the conversation view of the root post (X parity).
+    hiddenAt: timestamp('hidden_at', { withTimezone: true }),
     // Timestamp the author last pinned this post to their profile. Nullable; only one pinned
     // post per author is enforced in the route layer (atomic clear-then-set in a tx).
     pinnedAt: timestamp('pinned_at', { withTimezone: true }),
@@ -108,6 +112,25 @@ export const likes = pgTable(
   ],
 )
 
+// User-owned folders for bookmarks. Bookmarks without a folder are surfaced
+// as the implicit "All bookmarks" view; bookmarks WITH a folder are shown
+// inside that folder. A bookmark can live in at most one folder, matching X.
+export const bookmarkFolders = pgTable(
+  'bookmark_folders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('bookmark_folders_user_idx').on(t.userId, t.createdAt),
+    check('bookmark_folder_name_len', sql`char_length(${t.name}) BETWEEN 1 AND 50`),
+  ],
+)
+
 export const bookmarks = pgTable(
   'bookmarks',
   {
@@ -117,11 +140,15 @@ export const bookmarks = pgTable(
     postId: uuid('post_id')
       .notNull()
       .references(() => posts.id, { onDelete: 'cascade' }),
+    folderId: uuid('folder_id').references(() => bookmarkFolders.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.postId] }),
     index('bookmarks_user_idx').on(t.userId, t.createdAt),
+    index('bookmarks_folder_idx').on(t.folderId, t.createdAt),
   ],
 )
 

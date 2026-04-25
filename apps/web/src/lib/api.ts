@@ -92,8 +92,38 @@ export const api = {
     request<{ users: Array<PublicUser>; posts: Array<Post> }>(
       `/api/search?q=${encodeURIComponent(q)}`
     ),
-  bookmarks: (cursor?: string) =>
-    request<FeedPage>(`/api/me/bookmarks${qs(cursor)}`),
+  bookmarks: (cursor?: string, folder?: string) => {
+    const params = new URLSearchParams()
+    if (cursor) params.set("cursor", cursor)
+    if (folder) params.set("folder", folder)
+    const search = params.toString()
+    return request<FeedPage>(
+      `/api/me/bookmarks${search ? `?${search}` : ""}`,
+    )
+  },
+  bookmarkFolders: () =>
+    request<{ folders: Array<BookmarkFolder>; unsortedCount: number }>(
+      "/api/me/bookmark-folders",
+    ),
+  createBookmarkFolder: (name: string) =>
+    request<{ folder: BookmarkFolder }>("/api/me/bookmark-folders", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  renameBookmarkFolder: (id: string, name: string) =>
+    request<{ folder: BookmarkFolder }>(`/api/me/bookmark-folders/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+  deleteBookmarkFolder: (id: string) =>
+    request<{ ok: true }>(`/api/me/bookmark-folders/${id}`, {
+      method: "DELETE",
+    }),
+  setBookmarkFolder: (postId: string, folderId: string | null) =>
+    request<{ ok: true }>(`/api/me/bookmarks/${postId}/folder`, {
+      method: "PUT",
+      body: JSON.stringify({ folderId }),
+    }),
   blocks: (cursor?: string) =>
     request<{ users: Array<BlockedUser>; nextCursor: string | null }>(
       `/api/me/blocks${qs(cursor)}`
@@ -281,6 +311,8 @@ export const api = {
     quoteOfId?: string
     mediaIds?: Array<string>
     poll?: PollInput
+    /** Who can reply to this post. Defaults to anyone server-side. */
+    replyRestriction?: "anyone" | "following" | "mentioned"
   }) =>
     request<{ post: Post }>("/api/posts", {
       method: "POST",
@@ -366,6 +398,8 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ text }),
     }),
+  postEdits: (id: string) =>
+    request<{ edits: Array<PostEdit> }>(`/api/posts/${id}/edits`),
 
   like: (id: string) =>
     request<{ ok: true }>(`/api/posts/${id}/like`, { method: "POST" }),
@@ -379,6 +413,10 @@ export const api = {
     request<{ ok: true }>(`/api/posts/${id}/repost`, { method: "POST" }),
   unrepost: (id: string) =>
     request<{ ok: true }>(`/api/posts/${id}/repost`, { method: "DELETE" }),
+  hidePost: (id: string) =>
+    request<{ ok: true }>(`/api/posts/${id}/hide`, { method: "POST" }),
+  unhidePost: (id: string) =>
+    request<{ ok: true }>(`/api/posts/${id}/hide`, { method: "DELETE" }),
   pinPost: (id: string) =>
     request<{ ok: true }>(`/api/posts/${id}/pin`, { method: "POST" }),
   unpinPost: (id: string) =>
@@ -475,6 +513,12 @@ export type ReportReason =
   | "illegal"
   | "other"
 
+export interface PostEdit {
+  id: string
+  previousText: string
+  editedAt: string
+}
+
 export interface Post {
   id: string
   text: string
@@ -487,6 +531,9 @@ export interface Post {
   sensitive: boolean
   contentWarning: string | null
   replyRestriction: "anyone" | "following" | "mentioned"
+  /** Set when the conversation root author hid this reply. The thread renderer
+   *  collapses these by default behind a "Show hidden replies" affordance. */
+  hidden?: boolean
   author: {
     id: string
     handle: string | null
@@ -494,6 +541,7 @@ export interface Post {
     avatarUrl: string | null
     isVerified: boolean
     isBot: boolean
+    role: "user" | "admin" | "owner"
   }
   counts: {
     likes: number
@@ -590,6 +638,7 @@ export interface UserListMember {
   displayName: string | null
   avatarUrl: string | null
   isVerified: boolean
+  role: "user" | "admin" | "owner"
   addedAt: string
 }
 
@@ -632,6 +681,7 @@ export interface PublicUser {
   bannerUrl: string | null
   isVerified: boolean
   isBot: boolean
+  role: "user" | "admin" | "owner"
   createdAt: string
 }
 
@@ -661,6 +711,7 @@ export interface BlockedUser {
   displayName: string | null
   avatarUrl: string | null
   isVerified: boolean
+  role: "user" | "admin" | "owner"
   blockedAt: string
 }
 
@@ -670,6 +721,7 @@ export interface MutedUser {
   displayName: string | null
   avatarUrl: string | null
   isVerified: boolean
+  role: "user" | "admin" | "owner"
   mutedAt: string
   scope: "feed" | "notifications" | "both"
 }
@@ -694,10 +746,22 @@ export interface SelfUser {
   createdAt: string
 }
 
+export interface BookmarkFolder {
+  id: string
+  name: string
+  createdAt: string
+  bookmarkCount?: number
+export interface ThreadReply extends Post {
+  /** Number of direct (non-deleted) replies to this reply. The thread route only ships
+   *  the first hop of replies; if this is non-zero, the UI shows a
+   *  "View N more replies" affordance that opens the reply's own thread page. */
+  descendantReplyCount: number
+}
+
 export interface Thread {
   ancestors: Array<Post>
   post: Post | null
-  replies: Array<Post>
+  replies: Array<ThreadReply>
 }
 
 export interface NotificationItem {
@@ -720,6 +784,7 @@ export interface NotificationItem {
     displayName: string | null
     avatarUrl: string | null
     isVerified: boolean
+    role: "user" | "admin" | "owner"
   } | null
   /** Hydrated for kinds whose entity is a post (like / repost / reply / mention / quote /
    *  article_reply). Null when the post was deleted or the kind has no associated post. */
@@ -773,6 +838,7 @@ export interface ArticleDto {
     displayName: string | null
     avatarUrl: string | null
     isVerified: boolean
+    role: "user" | "admin" | "owner"
   }
 }
 
@@ -782,6 +848,7 @@ export interface DmMember {
   displayName: string | null
   avatarUrl: string | null
   isVerified: boolean
+  role: "user" | "admin" | "owner"
 }
 
 export type DmRequestState = "none" | "pending" | "accepted" | "declined"
@@ -812,7 +879,10 @@ export interface DmConversationDetail {
   myRole: "member" | "admin"
   myRequestState: DmRequestState
   members: Array<
-    DmMember & { role: "member" | "admin"; lastReadMessageId: string | null }
+    DmMember & {
+      chatRole: "member" | "admin"
+      lastReadMessageId: string | null
+    }
   >
 }
 
@@ -838,6 +908,7 @@ export interface InvitePreview {
       displayName: string | null
       avatarUrl: string | null
       isVerified: boolean
+      role: "user" | "admin" | "owner"
     }>
   }
   expiresAt: string | null
