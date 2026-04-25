@@ -5,8 +5,11 @@ import { VerifyEmail } from './templates/verify.tsx'
 import { ResetEmail } from './templates/reset.tsx'
 import { MagicLinkEmail } from './templates/magic-link.tsx'
 import { WelcomeEmail } from './templates/welcome.tsx'
+import { DigestEmail } from './templates/digest.tsx'
 
-export type TemplateName = 'verify' | 'reset' | 'magic-link' | 'welcome'
+export type { DigestItem } from './templates/digest.tsx'
+
+export type TemplateName = 'verify' | 'reset' | 'magic-link' | 'welcome' | 'digest'
 
 export interface SendArgs {
   to: string
@@ -32,6 +35,16 @@ async function renderTemplate(template: TemplateName, data: Record<string, unkno
       return render(MagicLinkEmail({ url: data.url as string }))
     case 'welcome':
       return render(WelcomeEmail({ handle: data.handle as string }))
+    case 'digest':
+      return render(
+        DigestEmail({
+          webUrl: data.webUrl as string,
+          recipientName: data.recipientName as string,
+          itemsByKind: data.itemsByKind as never,
+          totalCount: data.totalCount as number,
+          unsubscribeUrl: data.unsubscribeUrl as string,
+        }),
+      )
   }
 }
 

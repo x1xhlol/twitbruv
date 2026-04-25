@@ -8,6 +8,7 @@ import { loadEnv } from './env.ts'
 import { handleEmailJob } from './jobs/email.ts'
 import { handleMediaJob } from './jobs/media-process.ts'
 import { publishDueScheduledPosts } from './jobs/publish-scheduled.ts'
+import { dispatchDigests } from './jobs/digest.ts'
 
 const env = loadEnv()
 
@@ -93,11 +94,44 @@ const scheduledTimer = setInterval(async () => {
   }
 }, SCHEDULED_INTERVAL_MS)
 
-log.info({ queues: ['email.send', 'media.process'], scheduledIntervalMs: SCHEDULED_INTERVAL_MS }, 'worker_ready')
+// Daily-digest dispatcher: runs every 15 minutes, scans profile_private for
+// users opted into a daily digest with new unread notifications, sends one
+// rollup email per user, and updates lastSentAt. The dispatcher itself caps
+// at 500 candidates per pass; for larger user bases we'd switch this over to
+// a sharded sweep keyed by user id.
+const DIGEST_INTERVAL_MS = 15 * 60 * 1000
+let digestRunning = false
+const digestTimer = setInterval(async () => {
+  if (digestRunning) return
+  digestRunning = true
+  try {
+    const res = await dispatchDigests({
+      db,
+      mailer,
+      webUrl: env.PUBLIC_WEB_URL,
+      appName: env.APP_NAME,
+    })
+    if (res.sent > 0) log.info(res, 'digests_sent')
+  } catch (err) {
+    log.error({ err: err instanceof Error ? err.message : err }, 'digests_failed')
+  } finally {
+    digestRunning = false
+  }
+}, DIGEST_INTERVAL_MS)
+
+log.info(
+  {
+    queues: ['email.send', 'media.process'],
+    scheduledIntervalMs: SCHEDULED_INTERVAL_MS,
+    digestIntervalMs: DIGEST_INTERVAL_MS,
+  },
+  'worker_ready',
+)
 
 const shutdown = async () => {
   log.info('worker_shutdown')
   clearInterval(scheduledTimer)
+  clearInterval(digestTimer)
   await boss.stop({ graceful: true })
   process.exit(0)
 }

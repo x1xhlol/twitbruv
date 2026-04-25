@@ -20,6 +20,11 @@ const envSchema = z.object({
   S3_SECRET_ACCESS_KEY: z.string(),
   S3_BUCKET: z.string(),
   S3_PUBLIC_URL: z.string().url(),
+
+  // Used by the digest dispatcher to compose absolute links inside email
+  // bodies. Must match the production web URL or links won't resolve.
+  PUBLIC_WEB_URL: z.string().url().default('http://localhost:3000'),
+  APP_NAME: z.string().default('twotter'),
 })
 
 export type Env = z.infer<typeof envSchema>
