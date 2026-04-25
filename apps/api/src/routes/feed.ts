@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, desc, eq, isNull, lt, sql } from '@workspace/db'
+import { and, desc, eq, inArray, isNull, lt, sql } from '@workspace/db'
 import { schema } from '@workspace/db'
 import { requireAuth, type HonoEnv } from '../middleware/session.ts'
 import { toPostDto } from '../lib/post-dto.ts'
@@ -269,6 +269,11 @@ feedRoute.get('/network', requireAuth(), async (c) => {
     { id: string; handle: string | null; displayName: string | null }
   >()
   if (allActorIds.size > 0) {
+    // Drizzle's tagged sql expands a JS array into N separate parameters
+    // (e.g. `ANY(($1, $2, $3))`) — that's a row constructor, not an array,
+    // and Postgres rejects it with "operator does not exist: uuid = record".
+    // Use the canonical inArray() helper which always emits the correct
+    // `= ANY($1::uuid[])` binding.
     const actorRows = await db
       .select({
         id: schema.users.id,
@@ -276,7 +281,7 @@ feedRoute.get('/network', requireAuth(), async (c) => {
         displayName: schema.users.displayName,
       })
       .from(schema.users)
-      .where(sql`${schema.users.id} = ANY(${[...allActorIds]})`)
+      .where(inArray(schema.users.id, [...allActorIds]))
     for (const u of actorRows) actorMap.set(u.id, u)
   }
 
