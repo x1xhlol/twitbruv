@@ -29,7 +29,7 @@ export const Route = createFileRoute("/")({
   }),
 })
 
-type FeedTab = "following" | "all"
+type FeedTab = "following" | "network" | "all"
 
 function Landing() {
   const navigate = Route.useNavigate()
@@ -48,8 +48,13 @@ function Landing() {
   const loadFeed = useCallback((cursor?: string) => api.feed(cursor), [])
   const loadPublic = useCallback(
     (cursor?: string) => api.publicTimeline(cursor),
-    []
+    [],
   )
+  const loadNetwork = useCallback(
+    (cursor?: string) => api.networkFeed(cursor),
+    [],
+  )
+
   const openThread = useCallback(
     (post: Post) => {
       const handle = post.author.handle
@@ -59,6 +64,7 @@ function Landing() {
           to: "/",
           search: { postId: post.id, postHandle: handle },
           replace: Boolean(selectedThread),
+          resetScroll: false,
         })
         return
       }
@@ -68,10 +74,10 @@ function Landing() {
         search: homeThreadFromFeedSearch(post.id, handle),
       })
     },
-    [isDesktop, navigate, selectedThread]
+    [isDesktop, navigate, selectedThread],
   )
   const closeThread = useCallback(() => {
-    navigate({ to: "/", search: {}, replace: true })
+    navigate({ to: "/", search: {}, replace: true, resetScroll: false })
   }, [navigate])
 
   useEffect(() => {
@@ -81,7 +87,7 @@ function Landing() {
       params: { handle: selectedThread.handle, id: selectedThread.id },
       search: homeThreadFromFeedSearch(
         selectedThread.id,
-        selectedThread.handle
+        selectedThread.handle,
       ),
       replace: true,
     })
@@ -98,10 +104,10 @@ function Landing() {
   if (session) {
     const needsHandle = me && !me.handle
     return (
-      <main className="@min-[1120px]/inset:flex @min-[1120px]/inset:justify-center @min-[1120px]/inset:overflow-x-clip">
-        <div className="@min-[1120px]/inset:flex @min-[1120px]/inset:min-h-[calc(100vh-3rem)] @min-[1120px]/inset:w-[1120px] @min-[1120px]/inset:items-start">
+      <main className="@min-[1120px]/inset:flex @min-[1120px]/inset:h-[calc(100svh-3rem)] @min-[1120px]/inset:min-h-0 @min-[1120px]/inset:justify-center @min-[1120px]/inset:overflow-hidden">
+        <div className="@min-[1120px]/inset:flex @min-[1120px]/inset:h-full @min-[1120px]/inset:min-h-0 @min-[1120px]/inset:w-[1120px] @min-[1120px]/inset:items-stretch">
           <div
-            className={`mx-auto w-full min-w-0 border-border md:max-w-[640px] md:border-x @min-[1120px]/inset:mx-0 @min-[1120px]/inset:max-w-none @min-[1120px]/inset:w-[640px] @min-[1120px]/inset:shrink-0 @min-[1120px]/inset:border-x @min-[1120px]/inset:border-border @min-[1120px]/inset:transition-transform @min-[1120px]/inset:duration-300 @min-[1120px]/inset:ease-out @min-[1120px]/inset:[will-change:transform] @min-[1120px]/inset:[contain:layout] ${
+            className={`mx-auto w-full min-w-0 border-border md:max-w-[640px] md:border-x @min-[1120px]/inset:mx-0 @min-[1120px]/inset:flex @min-[1120px]/inset:h-full @min-[1120px]/inset:min-h-0 @min-[1120px]/inset:w-[640px] @min-[1120px]/inset:max-w-none @min-[1120px]/inset:shrink-0 @min-[1120px]/inset:flex-col @min-[1120px]/inset:overflow-y-auto @min-[1120px]/inset:border-x @min-[1120px]/inset:border-border @min-[1120px]/inset:transition-transform @min-[1120px]/inset:duration-300 @min-[1120px]/inset:ease-out @min-[1120px]/inset:[will-change:transform] @min-[1120px]/inset:[contain:layout] ${
               panelThread
                 ? "@min-[1120px]/inset:translate-x-0"
                 : "@min-[1120px]/inset:translate-x-[240px]"
@@ -124,7 +130,7 @@ function Landing() {
               <Compose onCreated={(p) => setNewPost(p)} collapsible />
             )}
             <div className="flex border-b border-border">
-              {(["following", "all"] as Array<FeedTab>).map((t) => (
+              {(["following", "network", "all"] as Array<FeedTab>).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -134,28 +140,78 @@ function Landing() {
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  {t === "following" ? "Following" : "All"}
+                  {t === "following"
+                    ? "Following"
+                    : t === "network"
+                      ? "Network"
+                      : "All"}
                 </button>
               ))}
             </div>
             <Feed
               queryKey={["feed", tab]}
-              load={tab === "following" ? loadFeed : loadPublic}
+              load={
+                tab === "following"
+                  ? loadFeed
+                  : tab === "network"
+                    ? loadNetwork
+                    : loadPublic
+              }
               emptyMessage={
                 tab === "following"
                   ? "Follow people to see posts here. Switch to All to see the public timeline."
-                  : "No posts yet. Be the first."
+                  : tab === "network"
+                    ? "No posts from your network's likes/reposts yet."
+                    : "No posts yet. Be the first."
               }
               prependItem={newPost}
               onOpenThread={openThread}
               activePostId={panelThread?.id}
+              renderActivityBanner={
+                tab === "network"
+                  ? (p) => {
+                      const np = p as Post & {
+                        networkActors?: Array<{
+                          id: string
+                          handle: string | null
+                          displayName: string | null
+                        }>
+                        networkActorTotal?: number
+                      }
+                      if (!np.networkActors || np.networkActors.length === 0)
+                        return null
+                      const first = np.networkActors[0]
+                      const more = (np.networkActorTotal ?? 1) - 1
+                      const name =
+                        first.displayName ||
+                        (first.handle ? `@${first.handle}` : "Someone")
+                      return (
+                        <div className="ml-10 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span>
+                            {name}
+                            {more > 0
+                              ? ` and ${more} other${more === 1 ? "" : "s"}`
+                              : ""}{" "}
+                            liked or reposted
+                          </span>
+                        </div>
+                      )
+                    }
+                  : undefined
+              }
             />
           </div>
 
-          <div className="hidden @min-[1120px]/inset:block @min-[1120px]/inset:w-[480px] @min-[1120px]/inset:shrink-0 @min-[1120px]/inset:[contain:layout]">
+          <div
+            className={`hidden @min-[1120px]/inset:h-full @min-[1120px]/inset:min-h-0 @min-[1120px]/inset:w-[480px] @min-[1120px]/inset:shrink-0 @min-[1120px]/inset:[contain:layout] ${
+              panelThread
+                ? "@min-[1120px]/inset:block"
+                : "@min-[1120px]/inset:pointer-events-none"
+            }`}
+          >
             {panelThread && (
               <div
-                className={`sticky top-0 h-[calc(100vh-3rem)] overflow-hidden border-l border-border bg-background transition-transform duration-300 ease-out [will-change:transform] ${
+                className={`h-full overflow-hidden border-l border-border bg-background transition-transform duration-300 ease-out [will-change:transform] ${
                   selectedThread
                     ? "translate-x-0"
                     : "pointer-events-none translate-x-full"

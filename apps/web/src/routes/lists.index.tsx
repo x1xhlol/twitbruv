@@ -1,6 +1,6 @@
 import { Link, createFileRoute, useRouter } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
-import { IconLock, IconUsers } from "@tabler/icons-react"
+import { IconLock, IconPin, IconPinFilled, IconUsers } from "@tabler/icons-react"
 import { Button } from "@workspace/ui/components/button"
 import { LIST_SLUG_RE, LIST_TITLE_MAX } from "@workspace/validators"
 import { ApiError, api } from "../lib/api"
@@ -76,14 +76,22 @@ function ListsIndex() {
         ) : (
           <ul className="divide-y divide-border">
             {lists.map((list) => (
-              <li key={list.id}>
+              <li
+                key={list.id}
+                className="flex items-start gap-2 px-4 py-3 transition hover:bg-muted/40"
+              >
                 <Link
                   to="/lists/$id"
                   params={{ id: list.id }}
-                  className="block px-4 py-3 transition hover:bg-muted/40"
+                  className="min-w-0 flex-1"
                 >
                   <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-semibold">{list.title}</h2>
+                    <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+                      {list.pinnedAt && (
+                        <IconPinFilled size={12} className="text-primary" />
+                      )}
+                      {list.title}
+                    </h2>
                     {list.isPrivate && (
                       <span className="flex items-center gap-1 text-xs text-muted-foreground">
                         <IconLock size={12} /> private
@@ -101,6 +109,34 @@ function ListsIndex() {
                     {list.memberCount === 1 ? "member" : "members"}
                   </p>
                 </Link>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={
+                    list.pinnedAt ? "unpin list" : "pin list to profile"
+                  }
+                  title={
+                    list.pinnedAt
+                      ? "Pinned to your profile — click to unpin"
+                      : "Pin to your profile"
+                  }
+                  onClick={async (e) => {
+                    e.preventDefault()
+                    try {
+                      if (list.pinnedAt) await api.unpinList(list.id)
+                      else await api.pinList(list.id)
+                      await refresh()
+                    } catch {
+                      /* swallow — refresh on next mount */
+                    }
+                  }}
+                >
+                  {list.pinnedAt ? (
+                    <IconPinFilled size={14} className="text-primary" />
+                  ) : (
+                    <IconPin size={14} />
+                  )}
+                </Button>
               </li>
             ))}
           </ul>
