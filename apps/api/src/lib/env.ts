@@ -79,14 +79,18 @@ const envSchema = z.object({
 
   // Comma-separated list of `owner/repo` GitHub repositories whose contributors should
   // receive the contributor badge. Evaluated when a user connects their GitHub account or
-  // hits Refresh in Settings → Connections. Unset → contributor checks are skipped and the
-  // badge is only granted via admin override.
+  // hits Refresh in Settings → Connections. Defaults to the canonical `twitbruv/twitbruv`
+  // repo so the badge works out of the box; deployments running their own fork can override
+  // with their own list. Set to a literal `none` (case-insensitive) to disable contributor
+  // checks entirely and only grant the badge via admin override.
   GITHUB_CONTRIBUTOR_REPOS: z
     .string()
     .optional()
     .transform((s) => {
-      if (!s) return [] as string[]
-      return s
+      const raw = s?.trim()
+      if (raw && raw.toLowerCase() === "none") return [] as string[]
+      const source = raw && raw.length > 0 ? raw : "twitbruv/twitbruv"
+      return source
         .split(",")
         .map((x) => x.trim())
         .filter((x) => /^[^/\s]+\/[^/\s]+$/.test(x))
