@@ -503,34 +503,48 @@ function GroupedNotificationRow({ group }: { group: GroupedNotification }) {
 }
 
 function AvatarRow({ items }: { items: Array<NotificationItem> }) {
+  const visible = items.slice(0, 6)
+  const remaining = items.length - visible.length
   return (
     <div
-      className="flex items-center gap-1.5"
+      className="flex items-center"
       onClick={(event) => event.stopPropagation()}
     >
-      {items.slice(0, 8).map((item) => {
-        const initial = (item.actor?.displayName ?? item.actor?.handle ?? "·")
-          .slice(0, 1)
-          .toUpperCase()
-        const handle = item.actor?.handle
-        const avatar = (
-          <Avatar initial={initial} src={item.actor?.avatarUrl} size="md" />
-        )
-        if (handle) {
-          return (
-            <Link
-              key={item.id}
-              to="/$handle"
-              params={{ handle }}
-              className="rounded-full transition hover:opacity-80"
-              aria-label={`View @${handle}`}
-            >
-              {avatar}
-            </Link>
+      <div className="flex -space-x-1.5">
+        {visible.map((item) => {
+          const initial = (item.actor?.displayName ?? item.actor?.handle ?? "·")
+            .slice(0, 1)
+            .toUpperCase()
+          const handle = item.actor?.handle
+          const avatar = (
+            <Avatar
+              initial={initial}
+              src={item.actor?.avatarUrl}
+              size="md"
+              className="ring-base-1 ring-2"
+            />
           )
-        }
-        return <span key={item.id}>{avatar}</span>
-      })}
+          if (handle) {
+            return (
+              <Link
+                key={item.id}
+                to="/$handle"
+                params={{ handle }}
+                className="rounded-full transition hover:opacity-80"
+                aria-label={`View @${handle}`}
+              >
+                {avatar}
+              </Link>
+            )
+          }
+          return <span key={item.id}>{avatar}</span>
+        })}
+      </div>
+      {remaining > 0 && (
+        <span className="ml-2 text-xs font-medium text-tertiary tabular-nums">
+          +{remaining}
+        </span>
+      )}
     </div>
   )
 }
