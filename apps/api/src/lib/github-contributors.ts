@@ -79,29 +79,46 @@ async function fetchContributorLogins(
 async function getContributorLogins(
   ctx: AppContext,
   repo: string,
-): Promise<Set<string>> {
+): Promise<Set<string> | null> {
   const key = cacheKey(repo)
   const cached = await ctx.cache.get<Array<string>>(key)
   if (cached) return new Set(cached)
   const fetched = await fetchContributorLogins(ctx, repo)
-  if (!fetched) return new Set()
+  if (!fetched) return null
   await ctx.cache.set(key, [...fetched], CACHE_TTL_SEC)
   return fetched
+}
+
+/**
+ * Tri-state: `true`/`false` are definitive, `unknown` means the GitHub API was unreachable
+ * or returned a non-OK status for every configured repo so we couldn't make a determination.
+ * Callers should NOT use `unknown` to overwrite an existing contributor flag.
+ */
+export type ContributorStatus = "yes" | "no" | "unknown"
+
+export async function checkUserContributorStatus(
+  ctx: AppContext,
+  login: string | null | undefined,
+): Promise<ContributorStatus> {
+  if (!login) return "no"
+  const repos = ctx.env.GITHUB_CONTRIBUTOR_REPOS
+  if (!repos || repos.length === 0) return "no"
+  const target = login.toLowerCase()
+  let sawAnyRepo = false
+  for (const repo of repos) {
+    const logins = await getContributorLogins(ctx, repo)
+    if (logins === null) continue
+    sawAnyRepo = true
+    if (logins.has(target)) return "yes"
+  }
+  return sawAnyRepo ? "no" : "unknown"
 }
 
 export async function isUserContributor(
   ctx: AppContext,
   login: string | null | undefined,
 ): Promise<boolean> {
-  if (!login) return false
-  const repos = ctx.env.GITHUB_CONTRIBUTOR_REPOS
-  if (!repos || repos.length === 0) return false
-  const target = login.toLowerCase()
-  for (const repo of repos) {
-    const logins = await getContributorLogins(ctx, repo)
-    if (logins.has(target)) return true
-  }
-  return false
+  return (await checkUserContributorStatus(ctx, login)) === "yes"
 }
 
 export function contributorReposConfigured(ctx: AppContext): boolean {
