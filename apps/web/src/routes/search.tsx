@@ -257,8 +257,15 @@ function SearchInner({ initialQuery }: { initialQuery: string }) {
                     type="button"
                     aria-label={`delete saved search ${s.query}`}
                     onClick={async () => {
+                      setSavedActionError(null)
                       try {
                         await api.deleteSavedSearch(s.id)
+                      } catch (err) {
+                        setSavedActionError(
+                          err instanceof ApiError
+                            ? err.message
+                            : "couldn't delete saved search"
+                        )
                       } finally {
                         await qc.invalidateQueries({
                           queryKey: qk.savedSearches(),

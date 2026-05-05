@@ -126,7 +126,19 @@ function DailySparkline({
 }
 
 function formatDayShort(day: string): string {
-  const d = new Date(day)
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
+  if (!match) return day
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const dayOfMonth = Number(match[3])
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(dayOfMonth)
+  ) {
+    return day
+  }
+  const d = new Date(year, month - 1, dayOfMonth)
   if (Number.isNaN(d.getTime())) return day
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
 }
