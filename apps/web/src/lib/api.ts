@@ -507,6 +507,16 @@ export const api = {
       method: "DELETE",
       body: JSON.stringify(reason ? { reason } : {}),
     }),
+  adminRefreshGithubConnection: (id: string) =>
+    request<{
+      ok: true
+      login: string | null
+      isContributor: boolean
+      changed: boolean
+      refreshedAt: string | null
+      stale: boolean
+      tokenRevoked: boolean
+    }>(`/api/admin/users/${id}/connectors/github/refresh`, { method: "POST" }),
   adminReports: (status?: ReportStatus, cursor?: string) => {
     const params = new URLSearchParams()
     if (status) params.set("status", status)

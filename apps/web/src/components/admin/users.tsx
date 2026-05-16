@@ -43,7 +43,8 @@ import {
   EllipsisVerticalIcon,
 } from "@heroicons/react/24/solid"
 import { Avatar } from "@workspace/ui/components/avatar"
-import { api } from "../../lib/api"
+import { toast } from "sonner"
+import { ApiError, api } from "../../lib/api"
 import { qk } from "../../lib/query-keys"
 import { useInfiniteScrollSentinel } from "../../lib/use-infinite-scroll-sentinel"
 import { useMe } from "../../lib/me"
@@ -420,6 +421,41 @@ export default function AdminUsers() {
                       {u.isContributor
                         ? "Revoke contributor"
                         : "Mark contributor"}
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      onClick={() =>
+                        act(u.id, async () => {
+                          try {
+                            const r = await api.adminRefreshGithubConnection(
+                              u.id
+                            )
+                            const who = r.login ? `@${r.login}` : "user"
+                            if (r.tokenRevoked) {
+                              toast.warning(
+                                `${who}: token revoked — must reconnect`
+                              )
+                            } else if (r.changed) {
+                              toast.success(
+                                `${who}: contributor ${r.isContributor ? "granted" : "revoked"}`
+                              )
+                            } else {
+                              toast(
+                                `${who}: no change (contributor: ${r.isContributor ? "yes" : "no"})`
+                              )
+                            }
+                          } catch (e) {
+                            if (e instanceof ApiError && e.status === 404) {
+                              toast.error("User has no GitHub connection")
+                              return
+                            }
+                            toast.error(
+                              e instanceof Error ? e.message : "Refresh failed"
+                            )
+                          }
+                        })
+                      }
+                    >
+                      Refresh GitHub
                     </DropdownMenu.Item>
                   </DropdownMenu.Group>
                   {isOwner && (

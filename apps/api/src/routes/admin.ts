@@ -27,6 +27,11 @@ import {
 import { parseCursor } from "../lib/cursor.ts"
 import { isReservedHandle } from "../lib/handles.ts"
 import { getOnlinePresence } from "../lib/presence.ts"
+import { bustCache, getGithubSnapshot } from "../lib/github-snapshot.ts"
+import {
+  bustContributorRepoCaches,
+  syncContributorStatus,
+} from "../lib/github-contributors.ts"
 
 export const adminRoute = new Hono<HonoEnv>()
 
@@ -1041,6 +1046,82 @@ adminRoute.delete("/users/:id/contributor", async (c) => {
   })
   c.get("ctx").track("admin_user_contributor_revoked", session.user.id)
   return c.json({ ok: true })
+})
+
+// Force-refresh a single user's GitHub connection: re-fetch their profile snapshot via their
+// stored OAuth token, bust the shared contributor-list cache, then recompute is_contributor
+// from the (possibly renamed) login. Useful when a contributor was added to one of the
+// configured repos after the user connected, or when their GitHub handle changed.
+adminRoute.post("/users/:id/connectors/github/refresh", async (c) => {
+  const ctx = c.get("ctx")
+  await ctx.rateLimit(c, "connectors.github.admin-refresh")
+  const session = c.get("session")!
+  const id = c.req.param("id")
+
+  const [conn] = await ctx.db
+    .select({
+      providerUsername: schema.oauthConnections.providerUsername,
+      accessTokenEncrypted: schema.oauthConnections.accessTokenEncrypted,
+    })
+    .from(schema.oauthConnections)
+    .where(
+      and(
+        eq(schema.oauthConnections.userId, id),
+        eq(schema.oauthConnections.provider, "github"),
+      ),
+    )
+    .limit(1)
+  if (!conn) return c.json({ error: "no_github_connection" }, 404)
+
+  await bustContributorRepoCaches(ctx)
+  await bustCache(ctx, id)
+  const { snapshot } = await getGithubSnapshot(ctx, id, { forceRefresh: true })
+  const login = snapshot?.login ?? conn.providerUsername ?? null
+  const { isContributor, changed } = await syncContributorStatus(
+    ctx,
+    id,
+    login,
+  )
+
+  // getGithubSnapshot clears accessTokenEncrypted on GitHubAuthError; re-read to surface a
+  // clear "token revoked" signal to the admin UI rather than guessing from snapshot.stale.
+  const [after] = await ctx.db
+    .select({
+      accessTokenEncrypted: schema.oauthConnections.accessTokenEncrypted,
+    })
+    .from(schema.oauthConnections)
+    .where(
+      and(
+        eq(schema.oauthConnections.userId, id),
+        eq(schema.oauthConnections.provider, "github"),
+      ),
+    )
+    .limit(1)
+  const tokenRevoked = !after?.accessTokenEncrypted
+
+  ctx.log.info(
+    {
+      adminId: session.user.id,
+      targetUserId: id,
+      login,
+      isContributor,
+      changed,
+      snapshotStale: snapshot?.stale ?? null,
+      tokenRevoked,
+    },
+    "admin_user_github_refreshed",
+  )
+  ctx.track("admin_user_github_refreshed", session.user.id)
+
+  return c.json({
+    ok: true,
+    login,
+    isContributor,
+    changed,
+    refreshedAt: snapshot?.refreshedAt ?? null,
+    stale: snapshot?.stale ?? false,
+    tokenRevoked,
+  })
 })
 
 // Owner-only: forcibly reassign a user's handle. Useful for reclaiming squatted handles or
